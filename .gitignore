@@ -397,5 +397,20 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# JetBrains Rider
+# JetBrains Rider / IntelliJ IDEA
+.idea/
 *.sln.iml
+*.iml
+
+# Zed editor
+.zed/
+
+# Oscilla local runtime data
+sources.cfg
+music_log.txt
+*.oscilla.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -44,6 +44,7 @@ namespace Oscilla.UI
         public event EventHandler<PlaylistDeleteEventArgs>? PlaylistDeleteRequested;
 
         private int _playlistCount = 1;
+        private int _playlistTagCount = 1;
         private double _targetVerticalOffset = 0;
         private bool _isScrolling = false;
         private Action? _cancelCurrentEdit;
@@ -138,6 +139,8 @@ namespace Oscilla.UI
             {
                 PlaylistsContainer.Children.Remove(rb);
             }
+
+            RefreshPlaylistCounter();
         }
 
         public void AddPlaylistExternally(string name, string? tag = null)
@@ -145,7 +148,7 @@ namespace Oscilla.UI
             RadioButton newPlaylist = new RadioButton
             {
                 Style = (Style)FindResource("NavButtonStyle"),
-                Tag = tag ?? "Playlist_" + _playlistCount,
+                Tag = tag ?? "Playlist_" + _playlistTagCount,
                 GroupName = "MainNav",
                 Opacity = 0,
                 RenderTransform = new TranslateTransform(-8, 0)
@@ -169,14 +172,14 @@ namespace Oscilla.UI
             TextBox editBox = new TextBox { Text = displayText.Text, Visibility = Visibility.Collapsed, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent, Foreground = (Brush)new BrushConverter().ConvertFrom("#00FFAB"), CaretBrush = Brushes.White, BorderThickness = new Thickness(0), Padding = new Thickness(0), Margin = new Thickness(-2, 0, 0, 0) };
             Grid.SetColumn(editBox, 0);
 
-            StackPanel normalActions = new StackPanel { Orientation = Orientation.Horizontal, Opacity = 0 };
+            StackPanel normalActions = new StackPanel { Orientation = Orientation.Horizontal, Opacity = 0, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
             Button editBtn = CreateActionBtn("M 2,12 L 2,14 L 4,14 L 12,6 L 10,4 Z M 11,5 L 13,3 L 11,1 L 9,3 Z", "#888888");
             Button deleteBtn = CreateActionBtn("M 2,3 L 12,3 M 5,1 L 9,1 M 4,3 L 4,12 L 10,12 L 10,3", "#888888");
             normalActions.Children.Add(editBtn);
             normalActions.Children.Add(deleteBtn);
             Grid.SetColumn(normalActions, 1);
 
-            StackPanel editActions = new StackPanel { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
+            StackPanel editActions = new StackPanel { Orientation = Orientation.Horizontal, Opacity = 0, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
             Button confirmBtn = CreateActionBtn("M 2,7 L 5,10 L 11,3", "#00FFAB");
             Button cancelBtn = CreateActionBtn("M 3,3 L 11,11 M 11,3 L 3,11", "#888888");
             editActions.Children.Add(confirmBtn);
@@ -193,17 +196,92 @@ namespace Oscilla.UI
             DoubleAnimation fadeIn = new DoubleAnimation(1, TimeSpan.FromMilliseconds(200));
             DoubleAnimation fadeOut = new DoubleAnimation(0, TimeSpan.FromMilliseconds(200));
 
-            newPlaylist.MouseEnter += (s, ev) => { if (editActions.Visibility == Visibility.Collapsed) normalActions.BeginAnimation(UIElement.OpacityProperty, fadeIn); };
-            newPlaylist.MouseLeave += (s, ev) => { normalActions.BeginAnimation(UIElement.OpacityProperty, fadeOut); };
+            void ShowNormalActions(bool animated = true)
+            {
+                if (editActions.Visibility != Visibility.Collapsed) return;
+
+                normalActions.BeginAnimation(UIElement.OpacityProperty, null);
+                normalActions.Visibility = Visibility.Visible;
+                normalActions.IsHitTestVisible = true;
+
+                if (animated)
+                {
+                    normalActions.Opacity = 0;
+                    normalActions.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+                }
+                else
+                {
+                    normalActions.Opacity = 1;
+                }
+            }
+
+            void HideNormalActions()
+            {
+                normalActions.BeginAnimation(UIElement.OpacityProperty, null);
+                normalActions.Opacity = 0;
+                normalActions.IsHitTestVisible = false;
+                normalActions.Visibility = Visibility.Collapsed;
+            }
+
+            void ShowEditActions()
+            {
+                editActions.BeginAnimation(UIElement.OpacityProperty, null);
+                editActions.Visibility = Visibility.Visible;
+                editActions.IsHitTestVisible = true;
+                editActions.Opacity = 1;
+            }
+
+            void HideEditActions()
+            {
+                editActions.BeginAnimation(UIElement.OpacityProperty, null);
+                editActions.Opacity = 0;
+                editActions.IsHitTestVisible = false;
+                editActions.Visibility = Visibility.Collapsed;
+            }
+
+            newPlaylist.MouseEnter += (s, ev) =>
+            {
+                if (editActions.Visibility == Visibility.Collapsed)
+                    ShowNormalActions();
+            };
+
+            newPlaylist.MouseLeave += (s, ev) =>
+            {
+                if (editActions.Visibility != Visibility.Collapsed) return;
+
+                normalActions.BeginAnimation(UIElement.OpacityProperty, null);
+                normalActions.Visibility = Visibility.Visible;
+                normalActions.IsHitTestVisible = false;
+
+                fadeOut.Completed -= OnNormalActionsFadeOutCompleted;
+                fadeOut.Completed += OnNormalActionsFadeOutCompleted;
+                normalActions.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+            };
+
+            void OnNormalActionsFadeOutCompleted(object? sender, EventArgs e)
+            {
+                fadeOut.Completed -= OnNormalActionsFadeOutCompleted;
+                if (!newPlaylist.IsMouseOver && editActions.Visibility == Visibility.Collapsed)
+                {
+                    HideNormalActions();
+                }
+            }
 
             // 联动操作代理
-            Action cancelEdit = () => {
-                editBox.Visibility = Visibility.Collapsed; editActions.Visibility = Visibility.Collapsed; displayText.Visibility = Visibility.Visible;
-                if (newPlaylist.IsMouseOver) normalActions.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+            Action cancelEdit = () =>
+            {
+                editBox.Visibility = Visibility.Collapsed;
+                HideEditActions();
+                displayText.Visibility = Visibility.Visible;
+
+                if (newPlaylist.IsMouseOver) ShowNormalActions(false);
+                else HideNormalActions();
+
                 _cancelCurrentEdit = null;
             };
 
-            Action commitEdit = () => {
+            Action commitEdit = () =>
+            {
                 string oldName = displayText.Text;
                 string newName = editBox.Text.Trim();
                 if (!string.IsNullOrWhiteSpace(newName) && oldName != newName)
@@ -215,11 +293,18 @@ namespace Oscilla.UI
                 cancelEdit();
             };
 
-            editBtn.Click += (s, ev) => {
-                _cancelCurrentEdit?.Invoke(); _cancelCurrentEdit = cancelEdit;
-                displayText.Visibility = Visibility.Collapsed; normalActions.Opacity = 0;
-                editBox.Visibility = Visibility.Visible; editActions.Visibility = Visibility.Visible;
-                editBox.Text = displayText.Text; editBox.Focus(); editBox.SelectAll();
+            editBtn.Click += (s, ev) =>
+            {
+                _cancelCurrentEdit?.Invoke();
+                _cancelCurrentEdit = cancelEdit;
+
+                displayText.Visibility = Visibility.Collapsed;
+                HideNormalActions();
+                editBox.Visibility = Visibility.Visible;
+                ShowEditActions();
+                editBox.Text = displayText.Text;
+                editBox.Focus();
+                editBox.SelectAll();
             };
 
             editBox.LostFocus += (s, ev) => { Dispatcher.BeginInvoke(new Action(() => { if (editBox.Visibility == Visibility.Visible) cancelEdit(); }), System.Windows.Threading.DispatcherPriority.Input); };
@@ -235,7 +320,8 @@ namespace Oscilla.UI
             newPlaylist.Drop += PlaylistButton_Drop;
 
             PlaylistsContainer.Children.Add(newPlaylist);
-            _playlistCount++;
+            _playlistTagCount++;
+            RefreshPlaylistCounter();
 
             var slideIn = new DoubleAnimation(0, TimeSpan.FromMilliseconds(400)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
             newPlaylist.RenderTransform.BeginAnimation(TranslateTransform.XProperty, slideIn);
@@ -277,7 +363,36 @@ namespace Oscilla.UI
             return names;
         }
 
-        public void RemovePlaylist(RadioButton playlist) { PlaylistsContainer.Children.Remove(playlist); }
+        public void RemovePlaylist(RadioButton playlist)
+        {
+            string? playlistName = GetPlaylistName(playlist);
+            if (!string.IsNullOrEmpty(playlistName))
+            {
+                _sessionActivePlaylists.Remove(playlistName);
+            }
+
+            PlaylistsContainer.Children.Remove(playlist);
+            RefreshPlaylistCounter();
+        }
+
+        private string? GetPlaylistName(RadioButton playlist)
+        {
+            if (playlist.Content is Grid grid && grid.Children.Count > 0 && grid.Children[0] is TextBlock tb)
+                return tb.Text;
+
+            return null;
+        }
+
+        private void RefreshPlaylistCounter()
+        {
+            var existingNames = new HashSet<string>(GetAllPlaylistNames(), StringComparer.OrdinalIgnoreCase);
+            _playlistCount = 1;
+
+            while (existingNames.Contains("New Playlist " + _playlistCount))
+            {
+                _playlistCount++;
+            }
+        }
 
         private void NavButton_Checked(object sender, RoutedEventArgs e)
         {
